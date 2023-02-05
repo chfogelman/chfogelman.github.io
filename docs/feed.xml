@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.9.3">Jekyll</generator><link href="http://localhost:4000/feed.xml" rel="self" type="application/atom+xml" /><link href="http://localhost:4000/" rel="alternate" type="text/html" /><updated>2023-02-05T11:33:44-08:00</updated><id>http://localhost:4000/feed.xml</id><title type="html">Systems Stuff</title><subtitle>Yet another github page</subtitle><entry><title type="html">Making Sense of SFINAE</title><link href="http://localhost:4000/c++/2023/02/03/how-sfinae-works.html" rel="alternate" type="text/html" title="Making Sense of SFINAE" /><published>2023-02-03T00:00:00-08:00</published><updated>2023-02-03T00:00:00-08:00</updated><id>http://localhost:4000/c++/2023/02/03/how-sfinae-works</id><content type="html" xml:base="http://localhost:4000/c++/2023/02/03/how-sfinae-works.html">&lt;p&gt;SFINAE is one of those terrible acronyms, like RAII, that could only have come from C++.
+And like RAII, it does neither a good job of telling you what it &lt;em&gt;does&lt;/em&gt;, nor of telling
+you what it’s &lt;em&gt;for&lt;/em&gt;. So let’s make sense of Substitution Failure Is Not An Error.&lt;/p&gt;
+
+&lt;h2 id=&quot;an-overload-resolution-overview&quot;&gt;An Overload-Resolution Overview&lt;/h2&gt;
+&lt;p&gt;First, some preliminaries: C++ allows you to overload functions based on the number and
+types of the function’s arguments. However, it also allows you to create template
+functions that are generic over types, which you can also overload. When a call
+expression&lt;sup id=&quot;fnref:1&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;#fn:1&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;1&lt;/a&gt;&lt;/sup&gt; is encountered, the compiler must pick exactly one of the overloads for
+that function name to be &lt;em&gt;the&lt;/em&gt; overload that’s called. The full set of rules that govern
+this process are not worth enumerating here, but they tend to be guided by one major
+principle: go from “more specific” to “less specific.”&lt;/p&gt;
+
+&lt;p&gt;I’m purposely handwaving away a lot of C++ esoterica here, and some overload rules are
+really exceptions to this principle. But it’s good to see how it works in practice.&lt;/p&gt;
+
+&lt;figure class=&quot;highlight&quot;&gt;&lt;pre&gt;&lt;code class=&quot;language-cpp&quot; data-lang=&quot;cpp&quot;&gt;&lt;span class=&quot;k&quot;&gt;template&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;lt;&lt;/span&gt;&lt;span class=&quot;k&quot;&gt;typename&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;T&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;kt&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;f&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;T&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;*&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;puts&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;T*&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;template&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;lt;&lt;/span&gt;&lt;span class=&quot;k&quot;&gt;typename&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;T&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;kt&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;f&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;T&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;puts&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;Just T&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;main&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;*&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;x&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nb&quot;&gt;nullptr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;f&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;x&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;             &lt;span class=&quot;c1&quot;&gt;// Prints &quot;T*&quot;&lt;/span&gt;
+    &lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;y&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;f&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;y&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;             &lt;span class=&quot;c1&quot;&gt;// Prints &quot;Just T&quot;&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/figure&gt;
+
+&lt;p&gt;When we call &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;f(x)&lt;/code&gt;, the compiler has two options: it could use the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;void f(T)&lt;/code&gt; overload,
+with &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;T = int*&lt;/code&gt;, or it could use the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;void f(T*)&lt;/code&gt; overload, with &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;T = int&lt;/code&gt;. But because
+&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;T*&lt;/code&gt; is “more specific” than &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;T&lt;/code&gt;, that’s the one it tries to use first. It’s able to match
+up &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;T = int&lt;/code&gt;, so it picks the first overload.&lt;/p&gt;
+
+&lt;p&gt;For &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;f(y)&lt;/code&gt;, it still tries to use &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;void f(T*)&lt;/code&gt; first, but since there’s no type &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;T&lt;/code&gt; such
+that &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;T* = int&lt;/code&gt;, it moves on to the “less specific” &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;void f(T)&lt;/code&gt;. Now it can match up &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;T =
+int&lt;/code&gt;, so that’s the overload it uses.&lt;/p&gt;
+
+&lt;h2 id=&quot;the-problem&quot;&gt;The Problem&lt;/h2&gt;
+
+&lt;p&gt;This seems nice, right? The compiler &lt;em&gt;should&lt;/em&gt; pick whichever overload most closely matches
+the parameters we pass in. But what if the better choice from the compiler’s perspective
+is not the best choice from our perspective?&lt;/p&gt;
+
+&lt;div class=&quot;footnotes&quot; role=&quot;doc-endnotes&quot;&gt;
+  &lt;ol&gt;
+    &lt;li id=&quot;fn:1&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;Something that looks like &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;my_func(x, y, z)&lt;/code&gt; is a call expression. So is &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;my_ref.f()&lt;/code&gt; and &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;my_pointer-&amp;gt;g(x)&lt;/code&gt;. &lt;a href=&quot;#fnref:1&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+  &lt;/ol&gt;
+&lt;/div&gt;</content><author><name></name></author><category term="C++" /><summary type="html">SFINAE is one of those terrible acronyms, like RAII, that could only have come from C++. And like RAII, it does neither a good job of telling you what it does, nor of telling you what it’s for. So let’s make sense of Substitution Failure Is Not An Error.</summary></entry></feed>

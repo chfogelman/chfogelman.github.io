@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+  <meta charset="UTF-8">
+  <title>Making Sense of SFINAE</title>
+  <meta name="viewport" content="width=device-width">
+
+  <!--[if lt IE 9]>
+    <script src="http://html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+  <![endif]-->
+
+  <link href="/assets/css/style.css" rel="stylesheet" />
+  <link href="/assets/css/colors-light.css" rel="stylesheet" />
+
+</head>
+
+<body>
+
+
+
+  <header id="header">
+    <h1><a href="/">Systems Stuff</a></h1>
+    <p>Yet another github page</p>
+  </header>
+
+
+
+  <div id="page">
+
+
+
+    <div id="sidebar">
+      <nav>
+        <ul>
+          <li><a href="/">Home</a></li>
+          <li><a href="/archives">Blog</a></li>
+          <li><a href="/about">About</a></li>
+          <li><a href="https://github.com/chfogelman">Github</a></li>
+          <!--
+          <li><a href="/feed.xml">RSS</a></li>
+          -->
+        </ul>
+      </nav>
+    </div>
+
+
+
+    <div id="content">
+      <article class="post">
+
+	
+		<h1><a href="/c++/2023/02/03/how-sfinae-works.html">Making Sense of SFINAE</a></h1>
+	
+
+	<div class="post-content"><p>SFINAE is one of those terrible acronyms, like RAII, that could only have come from C++.
+And like RAII, it does neither a good job of telling you what it <em>does</em>, nor of telling
+you what it’s <em>for</em>. So let’s make sense of Substitution Failure Is Not An Error.</p>
+
+<h2 id="an-overload-resolution-overview">An Overload-Resolution Overview</h2>
+<p>First, some preliminaries: C++ allows you to overload functions based on the number and
+types of the function’s arguments. However, it also allows you to create template
+functions that are generic over types, which you can also overload. When a call
+expression<sup id="fnref:1" role="doc-noteref"><a href="#fn:1" class="footnote" rel="footnote">1</a></sup> is encountered, the compiler must pick exactly one of the overloads for
+that function name to be <em>the</em> overload that’s called. The full set of rules that govern
+this process are not worth enumerating here, but they tend to be guided by one major
+principle: go from “more specific” to “less specific.”</p>
+
+<p>I’m purposely handwaving away a lot of C++ esoterica here, and some overload rules are
+really exceptions to this principle. But it’s good to see how it works in practice.</p>
+
+<figure class="highlight"><pre><code class="language-cpp" data-lang="cpp"><span class="k">template</span><span class="o">&lt;</span><span class="k">typename</span> <span class="nc">T</span><span class="p">&gt;</span>
+<span class="kt">void</span> <span class="nf">f</span><span class="p">(</span><span class="n">T</span><span class="o">*</span><span class="p">)</span> <span class="p">{</span>
+    <span class="n">puts</span><span class="p">(</span><span class="s">"T*"</span><span class="p">);</span>
+<span class="p">}</span>
+<span class="k">template</span><span class="o">&lt;</span><span class="k">typename</span> <span class="nc">T</span><span class="p">&gt;</span>
+<span class="kt">void</span> <span class="nf">f</span><span class="p">(</span><span class="n">T</span><span class="p">)</span> <span class="p">{</span>
+    <span class="n">puts</span><span class="p">(</span><span class="s">"Just T"</span><span class="p">);</span>
+<span class="p">}</span>
+<span class="kt">int</span> <span class="nf">main</span><span class="p">()</span> <span class="p">{</span>
+    <span class="kt">int</span><span class="o">*</span> <span class="n">x</span> <span class="o">=</span> <span class="nb">nullptr</span><span class="p">;</span>
+    <span class="n">f</span><span class="p">(</span><span class="n">x</span><span class="p">);</span>             <span class="c1">// Prints "T*"</span>
+    <span class="kt">int</span> <span class="n">y</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="n">f</span><span class="p">(</span><span class="n">y</span><span class="p">);</span>             <span class="c1">// Prints "Just T"</span>
+<span class="p">}</span></code></pre></figure>
+
+<p>When we call <code class="language-plaintext highlighter-rouge">f(x)</code>, the compiler has two options: it could use the <code class="language-plaintext highlighter-rouge">void f(T)</code> overload,
+with <code class="language-plaintext highlighter-rouge">T = int*</code>, or it could use the <code class="language-plaintext highlighter-rouge">void f(T*)</code> overload, with <code class="language-plaintext highlighter-rouge">T = int</code>. But because
+<code class="language-plaintext highlighter-rouge">T*</code> is “more specific” than <code class="language-plaintext highlighter-rouge">T</code>, that’s the one it tries to use first. It’s able to match
+up <code class="language-plaintext highlighter-rouge">T = int</code>, so it picks the first overload.</p>
+
+<p>For <code class="language-plaintext highlighter-rouge">f(y)</code>, it still tries to use <code class="language-plaintext highlighter-rouge">void f(T*)</code> first, but since there’s no type <code class="language-plaintext highlighter-rouge">T</code> such
+that <code class="language-plaintext highlighter-rouge">T* = int</code>, it moves on to the “less specific” <code class="language-plaintext highlighter-rouge">void f(T)</code>. Now it can match up <code class="language-plaintext highlighter-rouge">T =
+int</code>, so that’s the overload it uses.</p>
+
+<h2 id="the-problem">The Problem</h2>
+
+<p>This seems nice, right? The compiler <em>should</em> pick whichever overload most closely matches
+the parameters we pass in. But what if the better choice from the compiler’s perspective
+is not the best choice from our perspective?</p>
+
+<div class="footnotes" role="doc-endnotes">
+  <ol>
+    <li id="fn:1" role="doc-endnote">
+      <p>Something that looks like <code class="language-plaintext highlighter-rouge">my_func(x, y, z)</code> is a call expression. So is <code class="language-plaintext highlighter-rouge">my_ref.f()</code> and <code class="language-plaintext highlighter-rouge">my_pointer-&gt;g(x)</code>. <a href="#fnref:1" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+</div>
+
+	<p class="meta">Posted on <span class="postdate">3 Feb 2023</span></p>
+
+</article>
+
+    </div>
+
+
+
+  </div>
+
+
+
+  <footer id="footer">
+    <p class="copyright">Copyright &copy; 2023 Carter Hunt Fogelman.
+  </footer>
+
+
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.1/jquery.min.js"></script>
+  <script src="/assets/js/jquery.mobilemenu.min.js"></script>
+
+  <script>
+    $(document).ready(function(){
+      $('#sidebar nav ul').mobileMenu({'topOptionText': 'Menu', 'prependTo': '#sidebar nav'});
+    });
+  </script>
+
+
+
+</body>
+</html>
