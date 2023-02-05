@@ -69,20 +69,20 @@ principle: go from “more specific” to “less specific.”</p>
 <p>I’m purposely handwaving away a lot of C++ esoterica here, and some overload rules are
 really exceptions to this principle. But it’s good to see how it works in practice.</p>
 
-<figure class="highlight"><pre><code class="language-cpp" data-lang="cpp"><span class="k">template</span><span class="o">&lt;</span><span class="k">typename</span> <span class="nc">T</span><span class="p">&gt;</span>
+<div><figure class="highlight"><pre><code class="language-cpp" data-lang="cpp"><span class="k">template</span><span class="o">&lt;</span><span class="k">typename</span> <span class="nc">T</span><span class="p">&gt;</span>
 <span class="kt">void</span> <span class="nf">f</span><span class="p">(</span><span class="n">T</span><span class="o">*</span><span class="p">)</span> <span class="p">{</span>
     <span class="n">puts</span><span class="p">(</span><span class="s">"T*"</span><span class="p">);</span>
 <span class="p">}</span>
 <span class="k">template</span><span class="o">&lt;</span><span class="k">typename</span> <span class="nc">T</span><span class="p">&gt;</span>
-<span class="kt">void</span> <span class="nf">f</span><span class="p">(</span><span class="n">T</span><span class="p">)</span> <span class="p">{</span>
+<span class="kt">void</span> <span class="n">f</span><span class="p">(</span><span class="n">T</span><span class="p">)</span> <span class="p">{</span>
     <span class="n">puts</span><span class="p">(</span><span class="s">"Just T"</span><span class="p">);</span>
 <span class="p">}</span>
-<span class="kt">int</span> <span class="nf">main</span><span class="p">()</span> <span class="p">{</span>
+<span class="kt">int</span> <span class="n">main</span><span class="p">()</span> <span class="p">{</span>
     <span class="kt">int</span><span class="o">*</span> <span class="n">x</span> <span class="o">=</span> <span class="nb">nullptr</span><span class="p">;</span>
     <span class="n">f</span><span class="p">(</span><span class="n">x</span><span class="p">);</span>             <span class="c1">// Prints "T*"</span>
     <span class="kt">int</span> <span class="n">y</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
     <span class="n">f</span><span class="p">(</span><span class="n">y</span><span class="p">);</span>             <span class="c1">// Prints "Just T"</span>
-<span class="p">}</span></code></pre></figure>
+<span class="p">}</span></code></pre><div class="example-play-button"><a href="https://google.com" target="_blank" rel="noopener noreferrer"><i class="fa-play"></i></a></div></figure></div>
 
 <p>When we call <code class="language-plaintext highlighter-rouge">f(x)</code>, the compiler has two options: it could use the <code class="language-plaintext highlighter-rouge">void f(T)</code> overload,
 with <code class="language-plaintext highlighter-rouge">T = int*</code>, or it could use the <code class="language-plaintext highlighter-rouge">void f(T*)</code> overload, with <code class="language-plaintext highlighter-rouge">T = int</code>. But because
